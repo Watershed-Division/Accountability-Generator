@@ -1,0 +1,10 @@
+{
+  "rows": [
+    { "name": "ALVAREZ, MARCUS",  "cat": "MIL",    "status": "PRESENT",    "notes": "",                          "travel": "" },
+    { "name": "BENNETT, CHLOE",   "cat": "MIL",    "status": "LEAVE",      "notes": "Through 14 Nov, local",     "travel": "" },
+    { "name": "CHEN, DAVID",      "cat": "CIV",    "status": "TDY",        "notes": "Conference, Denver CO",     "travel": "Returns 12 Nov" },
+    { "name": "DUBOIS, ELENA",    "cat": "CIV",    "status": "PRESENT",    "notes": "",                          "travel": "TDY San Antonio TX, 16-18 Nov" },
+    { "name": "OKAFOR, JAMES",    "cat": "MIL",    "status": "CLASS",      "notes": "Week 2 of 3",               "travel": "" },
+    { "name": "PATEL, RIYA",      "cat": "INTERN", "status": "OTHER",      "notes": "Medical appointment, AM",   "travel": "" }
+  ]
+}

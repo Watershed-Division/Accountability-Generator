@@ -1,0 +1,498 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Accountability Generator</title>
+<script>
+/* =====================================================================
+   CONFIGURATION — edit this block to adapt the tool to your team.
+   Everything org-specific lives here; the rest of the file is generic.
+   ===================================================================== */
+window.APP_CONFIG = {
+  appTitle: "Accountability Generator",
+
+  // Used for the email subject AND the first line of the copied body:
+  // "<subjectPrefix> 26 October 2026"
+  subjectPrefix: "Example Unit Accountability",
+
+  // Drop-down options. Order here = order in the menu.
+  categories: ["MIL", "CIV", "INTERN"],
+  statuses:   ["PRESENT", "TDY", "CLASS", "LEAVE", "CONV LEAVE", "OTHER"],
+
+  // Status applied by the "Mark everyone ..." button.
+  defaultStatus: "PRESENT",
+
+  // Header for the free-text travel column.
+  travelColumnLabel: "Projected Travel Next 14 Days",
+
+  // Reminders shown under the Roster heading (one line each).
+  hints: [
+    "Your roster is saved in this browser automatically.",
+    "Send accountability to your reporting inbox and CC team leads.",
+    "Leave entries need dates and location (or note if local).",
+    "Don't forget to update the accountability portal too (top right)."
+  ],
+
+  // Quick-link buttons in the top banner. Point these at your real systems.
+  // The defaults open bundled example pages so the repo works offline.
+  links: [
+    { label: "Master Schedule",       url: "examples/master-schedule.html" },
+    { label: "Accountability Portal", url: "examples/accountability-portal.html" }
+  ],
+
+  // localStorage key and backup file name.
+  storageKey: "accountability:v1",
+  exportFileName: "accountability_roster_export.json"
+};
+</script>
+<style>
+:root{
+  --bg:#202020; --panel:#D3D3D1; --ink:#1B2433; --muted:#4A4A48; --line:#A9A9A7;
+  --purple:#4B0082; --purple-ink:#FFFFFF; --focus:#2F6FDB; --warn:#A63D16; --warn-bg:#FBEDE6;
+  --alt:#C9C9C7; --btn:#FFFFFF; --btn-line:#6E6E6C;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#202020; --panel:#2B2B2B; --ink:#E3E8EF; --muted:#A8A8A6; --line:#4A4A4A;
+    --purple:#4B0082; --purple-ink:#FFFFFF; --focus:#86AEF2; --warn:#F2A07C; --warn-bg:#3A2218;
+    --alt:#333333; --btn:#3A3A3A; --btn-line:#8A8A88;
+    color-scheme: dark;
+  }
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:14px/1.45 "Segoe UI",Calibri,Arial,sans-serif}
+header{background:var(--purple);color:var(--purple-ink);padding:14px 24px;display:flex;flex-wrap:wrap;align-items:center;gap:12px 24px}
+header h1{font-size:20px;margin:0;font-weight:600;letter-spacing:.02em}
+header label{display:flex;align-items:center;gap:8px;font-size:13px}
+header input[type=date]{font:inherit;padding:4px 6px;border-radius:4px;border:1px solid transparent}
+.spacer{flex:1}
+main{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:20px;padding:20px 24px;max-width:1500px;margin:0 auto}
+@media (max-width:1000px){main{grid-template-columns:1fr}}
+section{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:16px}
+h2{font-size:15px;margin:0 0 4px;font-weight:600}
+.hint{color:var(--muted);font-size:12.5px;margin:0 0 12px}
+.scroll{overflow-x:auto}
+table.ed{width:100%;border-collapse:collapse;min-width:780px;table-layout:auto}
+table.ed th{text-align:left;font-size:12px;font-weight:600;color:var(--muted);padding:6px 6px;border-bottom:2px solid var(--line)}
+table.ed td{padding:4px 6px;border-bottom:1px solid var(--line);vertical-align:middle}
+table.ed tr:nth-child(even) td{background:var(--alt)}
+table.ed tr.bad td{background:var(--warn-bg)}
+table.ed input,table.ed select{width:100%;font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--btn-line);border-radius:4px;padding:5px 6px}
+table.ed tr.bad select:invalid, table.ed select.missing{border-color:var(--warn);outline:1px solid var(--warn)}
+.num{width:28px;color:var(--muted);font-size:12px;text-align:right}
+.ctl{white-space:nowrap;width:1%}
+button{font:inherit;color:var(--ink);background:var(--btn);border:1px solid var(--btn-line);border-radius:4px;padding:6px 12px;cursor:pointer}
+button:hover{border-color:var(--ink)}
+button.icon{padding:3px 5px;font-size:12px;line-height:1}
+button.primary{background:var(--purple);color:var(--purple-ink);border-color:var(--purple);font-weight:600;padding:8px 16px}
+header button{background:transparent;color:var(--purple-ink);border-color:rgba(255,255,255,.55)}
+header button.primary{background:#FFFFFF;color:#4B0082;border-color:#FFFFFF}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.row-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;align-items:center}
+.row-actions label{display:flex;gap:6px;align-items:center;font-size:13px;color:var(--muted);margin-left:auto}
+.warnline{color:var(--warn);font-size:13px;margin:10px 0 0;min-height:1.2em}
+/* The preview is always "paper", since it mirrors what lands in the email */
+.paper{background:#FFFFFF;color:#000;border:1px solid #BFC7D2;border-radius:3px;padding:18px;overflow-x:auto;box-shadow:0 1px 0 rgba(0,0,0,.04)}
+.preview-head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+.preview-head .hint{margin:0}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#1B2433;color:#fff;padding:10px 16px;border-radius:6px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .2s}
+.toast.show{opacity:1}
+@media (prefers-reduced-motion:reduce){.toast{transition:none}}
+.sub{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.links{display:flex;gap:10px;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<header>
+  <h1 id="appTitle">Accountability Generator</h1>
+  <label>Date <input type="date" id="date"></label>
+  <span class="spacer"></span>
+  <span id="links" class="links"></span>
+</header>
+
+<main>
+  <section aria-labelledby="rosterTitle">
+    <h2 id="rosterTitle">Roster</h2>
+    <p class="hint" id="hints"></p>
+    <div class="scroll">
+      <table class="ed">
+        <thead><tr><th class="num">#</th><th>Name</th><th style="width:105px">Category</th><th style="width:125px">Status</th><th>Notes</th><th id="travelHead">Projected Travel Next 14 Days</th><th class="ctl"><span class="visually-hidden" style="position:absolute;left:-9999px">Row actions</span></th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <div class="row-actions">
+      <button type="button" id="addRow">Add person</button>
+      <button type="button" id="resetDay">Mark everyone present</button>
+      <button type="button" id="clearStatus">Clear statuses</button>
+      <button type="button" id="clearNotes">Clear notes</button>
+    </div>
+    <p class="warnline" id="warn" role="status"></p>
+    <div class="sub">
+      <button type="button" id="exportBtn">Back up roster to file</button>
+      <button type="button" id="importBtn">Load roster from file</button>
+      <input type="file" id="importFile" accept=".json,application/json" hidden>
+    </div>
+  </section>
+
+  <section aria-labelledby="prevTitle">
+    <div class="preview-head">
+      <h2 id="prevTitle">Preview</h2>
+      <p class="hint">This is exactly what gets copied.</p>
+    </div>
+    <div class="paper" id="preview"></div>
+    <div class="sub">
+      <button id="copySubject" type="button">Copy subject line</button>
+      <button id="copyBody" type="button" class="primary">Copy Roster </button>
+    </div>
+  </section>
+</main>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function(){
+  "use strict";
+  var CFG = window.APP_CONFIG || {};
+  var CATS = CFG.categories || ["MIL","CIV","INTERN"];
+  var STATS = CFG.statuses || ["PRESENT","LEAVE","OTHER"];
+  var DEFAULT_STATUS = CFG.defaultStatus || STATS[0];
+  var TRAVEL_LABEL = CFG.travelColumnLabel || "Projected Travel";
+  var KEY = CFG.storageKey || "accountability:v1";
+  var EXPORT_NAME = CFG.exportFileName || "accountability_roster_export.json";
+  var MONTHS_FULL = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  var MONTHS = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
+
+  var state = { rows: [] };
+
+  function uid(){ return Math.random().toString(36).slice(2,10); }
+  function blank(){ return { id: uid(), name: "", cat: "", status: "", notes: "", travel: "" }; }
+
+  function load(){
+    try {
+      var raw = localStorage.getItem(KEY);
+      if (raw) {
+        var d = JSON.parse(raw);
+        if (d && Array.isArray(d.rows)) {
+          state.rows = d.rows.map(clean);
+        }
+      }
+    } catch (e) {}
+    if (!state.rows.length) { for (var i=0;i<5;i++) state.rows.push(blank()); }
+  }
+  function save(){
+    try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {}
+  }
+  function clean(r){
+    r = r || {};
+    return {
+      id: r.id || uid(),
+      name: String(r.name || ""),
+      cat: CATS.indexOf(r.cat) >= 0 ? r.cat : "",
+      status: STATS.indexOf(r.status) >= 0 ? r.status : "",
+      notes: String(r.notes || ""),
+      travel: String(r.travel || "")
+    };
+  }
+
+  function esc(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];
+    });
+  }
+
+  // ---- date ----
+  var dateEl = document.getElementById("date");
+  function todayISO(){
+    var d = new Date();
+    return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
+  }
+  dateEl.value = todayISO();
+  function fmtDate(){
+    var v = dateEl.value || todayISO();
+    var p = v.split("-");
+    return p[2] + " " + MONTHS[parseInt(p[1],10)-1] + " " + p[0];
+  }
+
+  function subjectLine(){
+    var p = (dateEl.value || todayISO()).split("-");
+    return (CFG.subjectPrefix || "Accountability") + " " + parseInt(p[2],10) + " " + MONTHS_FULL[parseInt(p[1],10)-1] + " " + p[0];
+  }
+
+  // ---- editor ----
+  var tbody = document.getElementById("rows");
+
+  function makeSelect(options, value, label){
+    var s = document.createElement("select");
+    s.setAttribute("aria-label", label);
+    var o0 = document.createElement("option"); o0.value = ""; o0.textContent = "Select…"; s.appendChild(o0);
+    options.forEach(function(o){
+      var op = document.createElement("option"); op.value = o; op.textContent = o;
+      if (o === value) op.selected = true;
+      s.appendChild(op);
+    });
+    return s;
+  }
+
+  function renderEditor(){
+    tbody.innerHTML = "";
+    state.rows.forEach(function(r, i){
+      var tr = document.createElement("tr");
+      tr.dataset.id = r.id;
+
+      var tdN = document.createElement("td"); tdN.className = "num"; tdN.textContent = i+1; tr.appendChild(tdN);
+
+      var td1 = document.createElement("td");
+      var name = document.createElement("input"); name.type = "text"; name.value = r.name;
+      name.setAttribute("aria-label", "Name, row " + (i+1));
+      name.addEventListener("input", function(){ r.name = name.value; changed(); });
+      td1.appendChild(name); tr.appendChild(td1);
+
+      var td2 = document.createElement("td");
+      var cat = makeSelect(CATS, r.cat, "Category, row " + (i+1));
+      cat.addEventListener("change", function(){ r.cat = cat.value; changed(); });
+      td2.appendChild(cat); tr.appendChild(td2);
+
+      var td3 = document.createElement("td");
+      var st = makeSelect(STATS, r.status, "Status, row " + (i+1));
+      st.addEventListener("change", function(){ r.status = st.value; changed(); });
+      td3.appendChild(st); tr.appendChild(td3);
+
+      var td4 = document.createElement("td");
+      var notes = document.createElement("input"); notes.type = "text"; notes.value = r.notes;
+      notes.setAttribute("aria-label", "Notes, row " + (i+1));
+      notes.addEventListener("input", function(){ r.notes = notes.value; changed(); });
+      td4.appendChild(notes); tr.appendChild(td4);
+
+      var tdT = document.createElement("td");
+      var travel = document.createElement("input"); travel.type = "text"; travel.value = r.travel;
+      travel.setAttribute("aria-label", TRAVEL_LABEL + ", row " + (i+1));
+      travel.addEventListener("input", function(){ r.travel = travel.value; changed(); });
+      tdT.appendChild(travel); tr.appendChild(tdT);
+
+      var td5 = document.createElement("td"); td5.className = "ctl";
+      td5.appendChild(iconBtn("↑", "Move up", function(){ move(i,-1); }));
+      td5.appendChild(document.createTextNode(" "));
+      td5.appendChild(iconBtn("↓", "Move down", function(){ move(i,1); }));
+      td5.appendChild(document.createTextNode(" "));
+      td5.appendChild(iconBtn("✕", "Remove row", function(){
+        if (r.name && !confirm("Remove " + r.name + " from the roster?")) return;
+        state.rows.splice(i,1);
+        if (!state.rows.length) state.rows.push(blank());
+        renderEditor(); changed();
+      }));
+      tr.appendChild(td5);
+      tbody.appendChild(tr);
+    });
+    flagRows();
+  }
+
+  function iconBtn(txt, label, fn){
+    var b = document.createElement("button"); b.type = "button"; b.className = "icon";
+    b.textContent = txt; b.title = label; b.setAttribute("aria-label", label);
+    b.addEventListener("click", fn); return b;
+  }
+  function move(i, d){
+    var j = i + d; if (j < 0 || j >= state.rows.length) return;
+    var t = state.rows[i]; state.rows[i] = state.rows[j]; state.rows[j] = t;
+    renderEditor(); changed();
+  }
+
+  function problems(){
+    return state.rows.filter(function(r){ return r.name.trim() && (!r.cat || !r.status); });
+  }
+  function flagRows(){
+    var bad = {};
+    problems().forEach(function(r){ bad[r.id] = true; });
+    Array.prototype.forEach.call(tbody.children, function(tr){
+      var isBad = !!bad[tr.dataset.id];
+      tr.classList.toggle("bad", isBad);
+      var sels = tr.querySelectorAll("select");
+      Array.prototype.forEach.call(sels, function(s){ s.classList.toggle("missing", isBad && !s.value); });
+    });
+    var n = problems().length;
+    document.getElementById("warn").textContent = n ? (n + (n===1 ? " person is" : " people are") + " missing a category or status.") : "";
+  }
+
+  function changed(){ save(); flagRows(); renderPreview(); }
+
+  // ---- output ----
+  function filled(){
+    return state.rows.filter(function(r){ return r.name.trim(); });
+  }
+
+  var F = "font-family:Arial,Helvetica,sans-serif;font-size:10pt;";
+  var TH = 'style="' + F + 'color:#000000;font-weight:bold;border:1px solid #000000;padding:4px 8px;text-align:center;"';
+  function td(v, align, extra){
+    return '<td style="' + F + 'color:#000000;border:1px solid #000000;padding:4px 8px;text-align:' + (align||"left") + ';' + (extra||"") + '">' + v + '</td>';
+  }
+
+  function buildHTML(){
+    var list = filled();
+    var h = '<div style="' + F + '">';
+    h += '<p style="font-family:Arial,Helvetica,sans-serif;font-size:12pt;font-weight:bold;margin:0 0 8px 0;color:#000000;">' + esc(subjectLine()) + '</p>';
+
+    // roster
+    h += '<table cellpadding="0" cellspacing="0" border="1" style="border-collapse:collapse;border:1px solid #000000;">';
+    h += '<tr><th ' + TH + '>NAME</th><th ' + TH + '>CATEGORY</th><th ' + TH + '>STATUS</th><th ' + TH + '>NOTES</th><th ' + TH + '>' + esc(TRAVEL_LABEL.toUpperCase()) + '</th></tr>';
+    if (!list.length) {
+      h += '<tr>' + td('<span style="color:#666666;">No names entered</span>',"left",'') + td("","center") + td("","center") + td("") + td("") + '</tr>';
+    }
+    list.forEach(function(r){
+      h += '<tr>' + td(esc(r.name.trim())) + td(esc(r.cat),"center") + td(esc(r.status),"center") + td(esc(r.notes.trim())) + td(esc(r.travel.trim())) + '</tr>';
+    });
+    h += '</table></div>';
+    return h;
+  }
+
+  function buildText(){
+    var list = filled();
+    var lines = [subjectLine(), ""];
+    lines.push(["NAME","CATEGORY","STATUS","NOTES",TRAVEL_LABEL.toUpperCase()].join("\t"));
+    list.forEach(function(r){ lines.push([r.name.trim(), r.cat, r.status, r.notes.trim(), r.travel.trim()].join("\t")); });
+    return lines.join("\r\n");
+  }
+
+  function renderPreview(){ document.getElementById("preview").innerHTML = buildHTML(); }
+
+  // ---- clipboard ----
+  function copyRich(html, text){
+    var done = function(ok){ return Promise.resolve(ok); };
+    if (navigator.clipboard && window.ClipboardItem) {
+      try {
+        return navigator.clipboard.write([new ClipboardItem({
+          "text/html": new Blob([html], {type:"text/html"}),
+          "text/plain": new Blob([text], {type:"text/plain"})
+        })]).then(function(){ return true; }, function(){ return fallback(html); });
+      } catch (e) {}
+    }
+    return done(fallback(html));
+  }
+  function fallback(html){
+    var div = document.createElement("div");
+    div.contentEditable = "true";
+    div.style.cssText = "position:fixed;left:-10000px;top:0;background:#fff;color:#000;";
+    div.innerHTML = html;
+    document.body.appendChild(div);
+    var range = document.createRange(); range.selectNodeContents(div);
+    var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+    var ok = false; try { ok = document.execCommand("copy"); } catch (e) {}
+    sel.removeAllRanges(); div.remove();
+    return ok;
+  }
+  function copyPlain(text){
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text).then(function(){ return true; }, function(){ return fallbackText(text); });
+    }
+    return Promise.resolve(fallbackText(text));
+  }
+  function fallbackText(text){
+    var ta = document.createElement("textarea"); ta.value = text;
+    ta.style.cssText = "position:fixed;left:-10000px;top:0;";
+    document.body.appendChild(ta); ta.select();
+    var ok = false; try { ok = document.execCommand("copy"); } catch (e) {}
+    ta.remove(); return ok;
+  }
+
+  var toastEl = document.getElementById("toast"), toastT;
+  function toast(msg){
+    toastEl.textContent = msg; toastEl.classList.add("show");
+    clearTimeout(toastT); toastT = setTimeout(function(){ toastEl.classList.remove("show"); }, 2600);
+  }
+
+  document.getElementById("copyBody").addEventListener("click", function(){
+    var n = problems().length;
+    if (n && !confirm(n + (n===1 ? " person is" : " people are") + " missing a category or status and won’t be counted correctly. Copy anyway?")) return;
+    if (!filled().length && !confirm("No names are entered. Copy an empty roster?")) return;
+    copyRich(buildHTML(), buildText()).then(function(ok){
+      toast(ok ? "Accountability copied. Paste with Ctrl+V." : "Copy was blocked by the browser. Select the preview, then press Ctrl+C.");
+    });
+  });
+  document.getElementById("copySubject").addEventListener("click", function(){
+    copyPlain(subjectLine()).then(function(ok){
+      toast(ok ? "Subject line copied." : "Copy was blocked by the browser.");
+    });
+  });
+
+
+  // ---- controls ----
+  document.getElementById("addRow").addEventListener("click", function(){
+    state.rows.push(blank()); renderEditor(); changed();
+    var inputs = tbody.querySelectorAll('input[type=text]');
+    if (inputs.length) inputs[inputs.length-3].focus();
+  });
+  document.getElementById("clearStatus").addEventListener("click", function(){
+    if (!confirm("Clear the status for everyone?")) return;
+    state.rows.forEach(function(r){ r.status = ""; });
+    renderEditor(); changed();
+  });
+  document.getElementById("clearNotes").addEventListener("click", function(){
+    if (!confirm("Clear all notes?")) return;
+    state.rows.forEach(function(r){ r.notes = ""; });
+    renderEditor(); changed();
+  });
+  document.getElementById("resetDay").addEventListener("click", function(){
+    if (!confirm("Set everyone to " + DEFAULT_STATUS + " and clear all notes?")) return;
+    state.rows.forEach(function(r){ if (r.name.trim()) { r.status = DEFAULT_STATUS; r.notes = ""; } });
+    renderEditor(); changed();
+  });
+  dateEl.addEventListener("change", renderPreview);
+
+  document.getElementById("exportBtn").addEventListener("click", function(){
+    var blob = new Blob([JSON.stringify({ rows: state.rows }, null, 2)], {type:"application/json"});
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = EXPORT_NAME;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function(){ URL.revokeObjectURL(a.href); }, 1000);
+  });
+  var fileEl = document.getElementById("importFile");
+  document.getElementById("importBtn").addEventListener("click", function(){ fileEl.click(); });
+  fileEl.addEventListener("change", function(){
+    var f = fileEl.files[0]; if (!f) return;
+    var rd = new FileReader();
+    rd.onload = function(){
+      try {
+        var d = JSON.parse(rd.result);
+        if (!d || !Array.isArray(d.rows)) throw new Error("bad");
+        if (!confirm("Replace the current roster with the " + d.rows.length + " rows in this file?")) return;
+        state.rows = d.rows.map(clean); if (!state.rows.length) state.rows.push(blank());
+        renderEditor(); changed(); toast("Roster loaded.");
+      } catch (e) { toast("That file isn’t a roster backup."); }
+      fileEl.value = "";
+    };
+    rd.readAsText(f);
+  });
+
+  // ---- apply configuration to the page ----
+  function applyConfig(){
+    var title = CFG.appTitle || "Accountability Generator";
+    document.title = title;
+    document.getElementById("appTitle").textContent = title;
+    document.getElementById("travelHead").textContent = TRAVEL_LABEL;
+    document.getElementById("resetDay").textContent = "Mark everyone " + DEFAULT_STATUS.toLowerCase();
+    var hints = document.getElementById("hints");
+    (CFG.hints || []).forEach(function(h, i){
+      if (i) hints.appendChild(document.createElement("br"));
+      hints.appendChild(document.createTextNode("- " + h));
+    });
+    var links = document.getElementById("links");
+    (CFG.links || []).forEach(function(l){
+      if (!l || !l.url) return;
+      var b = document.createElement("button");
+      b.type = "button"; b.textContent = l.label || l.url;
+      b.addEventListener("click", function(){ window.open(l.url, "_blank", "noopener"); });
+      links.appendChild(b);
+    });
+  }
+
+  // ---- init ----
+  applyConfig();
+  load();
+  renderEditor();
+  renderPreview();
+})();
+</script>
+</body>
+</html>
